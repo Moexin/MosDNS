@@ -1,0 +1,133 @@
+log:
+  level: error
+
+plugins:
+  - tag: cnip
+    type: ip_set
+    args:
+      files:
+        - /etc/mosdns/cnip.txt
+
+  - tag: hosts
+    type: hosts
+    args:
+      files:
+        - /etc/mosdns/hosts.txt
+
+  - tag: adsite
+    type: domain_set
+    args:
+      files:
+        - /etc/mosdns/adsite.txt
+
+  - tag: cnsite
+    type: domain_set
+    args:
+      files:
+        - /etc/mosdns/cnsite.txt
+
+  - tag: gfwsite
+    type: domain_set
+    args:
+      files:
+        - /etc/mosdns/gfwsite.txt
+
+  - tag: lazycache
+    type: cache
+    args:
+      size: 16777216
+      lazy_cache_ttl: 86400
+      dump_interval: 3600
+      dump_file: /etc/mosdns/mosdns.db
+
+  - tag: alidns
+    type: forward
+    args:
+      concurrent: 2
+      upstreams:
+        - addr: quic://223.5.5.5
+        - addr: quic://223.6.6.6
+
+  - tag: opendns
+    type: forward
+    args:
+      concurrent: 2
+      upstreams:
+        - addr: tcp://208.67.220.220:443
+          enable_pipeline: true
+        - addr: tcp://208.67.222.222:443
+          enable_pipeline: true
+
+  - tag: opendnspreferv4
+    type: sequence
+    args:
+      - exec: prefer_ipv4
+      - exec: $opendns
+
+  - tag: whether
+    type: sequence
+    args:
+      - exec: ttl 600-86400
+      - matches: has_resp
+        exec: accept
+
+  - tag: nocnip
+    type: sequence
+    args:
+      - exec: $alidns
+      - matches: "!resp_ip $cnip"
+        exec: drop_resp
+
+  - tag: final
+    type: fallback
+    args:
+      primary: nocnip
+      secondary: opendnspreferv4
+      always_standby: true
+
+  - tag: cndomain
+    type: sequence
+    args:
+      - matches: qname $cnsite
+        exec: $alidns
+
+  - tag: gfwdomain
+    type: sequence
+    args:
+      - matches: qname $gfwsite
+        exec: $opendnspreferv4
+
+  - tag: addomain
+    type: sequence
+    args:
+      - matches: qname $adsite
+        exec: reject 3
+      - matches: qtype 65
+        exec: reject 3
+
+  - tag: maindns
+    type: sequence
+    args:
+      - exec: $hosts
+      - exec: jump whether
+      - exec: $lazycache
+      - exec: jump whether
+      - exec: $addomain
+      - exec: jump whether
+      - exec: $cndomain
+      - exec: jump whether
+      - exec: $gfwdomain
+      - exec: jump whether
+      - exec: $final
+
+  - tag: localhost
+    type: udp_server
+    args:
+      entry: maindns
+      listen: 127.0.0.1:53
+
+  - tag: localareanetwork
+    type: udp_server
+    args:
+      entry: maindns
+      listen: 10.10.10.10:53

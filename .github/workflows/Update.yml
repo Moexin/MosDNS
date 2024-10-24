@@ -1,0 +1,48 @@
+name: Update
+
+on:
+  push:
+  schedule:
+    - cron: 0 1,7,13,19 * * *
+
+env:
+  TZ: Asia/Shanghai
+
+jobs:
+  Update:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: GetTime
+      run: echo "GET_TIME=$(date +'%Y-%m-%d %H:%M:%S CST')" >> $GITHUB_ENV
+
+    - name: Update
+      run: |
+        curl -LO https://github.com/IrineSistiana/mosdns/releases/latest/download/mosdns-linux-amd64.zip
+        rm -f ./usr/bin/mosdns
+        unzip -q -o mosdns-linux-amd64.zip mosdns -d ./usr/bin
+        rm -f mosdns-linux-amd64.zip
+        curl -L https://raw.githubusercontent.com/Loyalsoldier/geoip/release/text/cn.txt -o ./etc/mosdns/cnip.txt
+        curl -L https://raw.githubusercontent.com/Loyalsoldier/v2ray-rules-dat/release/direct-list.txt -o ./etc/mosdns/cnsite.txt
+        curl -L https://raw.githubusercontent.com/Loyalsoldier/v2ray-rules-dat/release/proxy-list.txt -o ./etc/mosdns/gfwsite.txt
+        curl -L https://raw.githubusercontent.com/Cats-Team/AdRules/main/mosdns_adrules.txt -o ./etc/mosdns/adsite.txt
+        curl -i "https://purge.jsdelivr.net/gh/Moexin/MosDNS@Files/etc/mosdns/cnip.txt"
+        curl -i "https://purge.jsdelivr.net/gh/Moexin/MosDNS@Files/etc/mosdns/cnsite.txt"
+        curl -i "https://purge.jsdelivr.net/gh/Moexin/MosDNS@Files/etc/mosdns/gfwsite.txt"
+        curl -i "https://purge.jsdelivr.net/gh/Moexin/MosDNS@Files/etc/mosdns/adsite.txt"
+        echo "Auto Update MosDNS in ${GET_TIME}" > README.md
+
+    - name: Clean
+      run: |
+        git config --local user.email "github-actions[bot]@users.noreply.github.com"
+        git config --local user.name "github-actions[bot]"
+        git checkout --orphan latest_branch
+        git add -A
+        git commit -am "${GET_TIME}"
+        git branch -D Files
+        git branch -m Files
+
+    - name: Push
+      run: git push -f origin Files
